@@ -8,19 +8,90 @@
       "!**/dist",
       "!**/node_modules",
       "!apps/web/src/components/ui",
+      "!.claude/skills",
       "!**/*.md",
       "!**/*.txt"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
-  "linter": { "enabled": true, "rules": { "preset": "recommended" } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["../*", "../**"],
+                "message": "Usa path alias @/ en lugar de rutas relativas ../"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "javascript": { "parser": { "unsafeParameterDecoratorsEnabled": true } },
   "css": { "parser": { "tailwindDirectives": true } },
   "overrides": [
     {
+      "includes": ["apps/web/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../*", "../**"],
+                    "message": "Usa path alias @/ en lugar de rutas relativas ../"
+                  },
+                  {
+                    "group": ["@/modules/*/*/**", "@/components/*/**", "@/lib/**", "@/hooks/**"],
+                    "message": "Importa mediante el barrel (index.ts): @/modules/<modulo>, @/modules/<modulo>/<capa>, @/components/ui, @/components/shared, @/lib o @/hooks"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["apps/api/**"],
-      "linter": { "rules": { "style": { "useImportType": "off" } } }
+      "linter": {
+        "rules": {
+          "style": {
+            "useImportType": "off",
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["../*", "../**"],
+                    "message": "Usa path alias @/ en lugar de rutas relativas ../"
+                  },
+                  {
+                    "group": [
+                      "@/modules/**",
+                      "!@/modules/*/index.js",
+                      "!@/modules/*/*/index.js",
+                      "@/shared/**",
+                      "!@/shared/index.js",
+                      "!@/shared/*/index.js"
+                    ],
+                    "message": "Importa mediante el barrel: @/modules/<modulo>/index.js, @/modules/<modulo>/<capa>/index.js o @/shared/<area>/index.js"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }

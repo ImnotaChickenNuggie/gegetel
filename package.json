@@ -13,7 +13,9 @@
     "build": "pnpm -r build",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "test": "pnpm -r --if-present test"
+    "test": "pnpm -r --if-present test",
+    "setup:skills": "pnpm dlx skills@latest add mattpocock/skills --skill setup-matt-pocock-skills --agent claude-code --copy -y && pnpm dlx impeccable install --project --providers=claude -y --force",
+    "update:skills": "pnpm dlx skills@latest update --project -y && pnpm dlx impeccable update"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
