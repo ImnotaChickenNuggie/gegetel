@@ -21,6 +21,7 @@ flowchart LR
     PAC["PAC<br/>timbrado de CFDI"]
     WA["WhatsApp Business API"]
     QW["API gestionada de Qwen"]
+    GEM["Gemini<br/>modelo de respaldo"]
 
     UP -->|"Portal web"| GT
     UL -->|"web de Beneficios"| GT
@@ -31,6 +32,7 @@ flowchart LR
     GT -->|"sincronización periódica"| BEN
     GT -->|"timbra"| PAC
     GT -->|"inferencia"| QW
+    GT -.->|"respaldo"| GEM
 ```
 
 ## Stack
@@ -42,7 +44,7 @@ flowchart LR
 | Base de datos principal | PostgreSQL | Transacciones para Factura y Créditos, y Row-Level Security para el aislamiento. |
 | Colas y caché | Redis | Tareas asíncronas con reintentos y caché. |
 | Servicio de IA | FastAPI | Ecosistema de IA en Python, en un servicio delgado y sin datos de negocio. |
-| Modelo | Qwen por API gestionada | Sin operar GPUs; una interfaz compatible con OpenAI permite cambiar de modelo. |
+| Modelo | Qwen por API gestionada, con Gemini Flash de respaldo | Sin operar GPUs. Con una interfaz compatible con OpenAI se cambia de modelo sin tocar el resto, y si ambos fallan responde el código ([ADR 0004](./adr/0004-proveedores-de-ia-y-fallback.md)). |
 
 Redis no es el registro único de una tarea crítica: la intención de timbrar se guarda primero en PostgreSQL.
 
@@ -61,6 +63,7 @@ flowchart TB
 
     EXT["Proveedores, PAC y WhatsApp"]
     QW["API gestionada de Qwen"]
+    GEM["Gemini<br/>respaldo"]
 
     WEB --> API
     API --> PG
@@ -71,6 +74,7 @@ flowchart TB
     WRK --> EXT
     EXT -->|"webhooks de WhatsApp"| API
     IA --> QW
+    IA -.->|"si Qwen falla"| GEM
 ```
 
 ## Módulos del monolito
@@ -108,7 +112,7 @@ erDiagram
 
 ## Mensaje de WhatsApp al Agente de IA
 
-El Crédito se consume solo con una respuesta exitosa. Se reserva antes de llamar al modelo para evitar el doble descuento por mensajes concurrentes o webhooks repetidos.
+El Crédito se consume solo con una respuesta exitosa. Se reserva antes de llamar al modelo para evitar el doble descuento por mensajes concurrentes o webhooks repetidos. Si Qwen falla, la misma inferencia se repite en Gemini. Si también falla Gemini, se libera la reserva y el código envía una respuesta determinista ([ADR 0004](./adr/0004-proveedores-de-ia-y-fallback.md)).
 
 ```mermaid
 sequenceDiagram
@@ -118,6 +122,7 @@ sequenceDiagram
     participant P as PostgreSQL
     participant F as FastAPI
     participant Q as Qwen
+    participant G as Gemini
 
     U->>W: Envía mensaje
     W->>N: Webhook con id de mensaje
@@ -134,15 +139,20 @@ sequenceDiagram
             N->>P: Obtiene contexto de esa Línea y del Catálogo
             N->>F: Mensaje y contexto filtrado
             F->>Q: Inferencia
-            Q-->>F: Respuesta
+            alt Qwen responde
+                Q-->>F: Respuesta
+            else Qwen caído o tiempo agotado
+                F->>G: Misma inferencia
+                G-->>F: Respuesta o error
+            end
             alt Respuesta exitosa
                 F-->>N: Respuesta
                 N->>P: Confirma consumo del Crédito
                 N-->>W: Envía respuesta
-            else Falla
+            else Ambos modelos fallan
                 F-->>N: Error
                 N->>P: Libera la reserva
-                N-->>W: Avisa que intente de nuevo
+                N-->>W: Respuesta en código con Créditos, Beneficios destacados y enlace al Catálogo
             end
         end
     end
@@ -288,7 +298,8 @@ API y workers no guardan estado, para poder escalar horizontalmente. Se extrae u
 
 - **Sin perfil de IA en el equipo:** 2 fullstack cubren producto, integraciones y agente antes del hito de semana 4. Es el mayor riesgo de plazo.
 - **Lightsail:** hay que confirmar región disponible y su límite de redes, y asumir el punto único de falla de Redis durante el piloto.
-- **Proveedor de Qwen:** el contrato debe ser compatible con la ley mexicana de datos personales, y hay que verificar región de datos, retención y no entrenamiento.
+- **Proveedores de IA (Qwen y Gemini):** ambos contratos deben ser compatibles con la ley mexicana de datos personales, y hay que verificar región de datos, retención cero y no entrenamiento.
+- **Gasto de IA:** además del límite de Créditos por Línea, hay presupuesto diario por Empresa y global. Al 150% del gasto esperado se alerta; al 200% se degrada a contexto corto y modelo más barato, cortando solo a la Línea o Empresa que lo provoca. En el techo de gasto se usa la respuesta en código.
 - **CFDI consolidada:** requiere validación de un contador antes de habilitarse; va después del MVP.
 - **SMS:** hay que confirmar que la API del Proveedor de telefonía permite enviarlos.
 - **Proveedor de beneficios y Comercio:** se asume que el proveedor suministra Beneficios de varios Comercios y puede entregar lotes de Códigos.
